@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 
 abstract class BleState extends Equatable {
   const BleState();
-  
+
   @override
   List<Object?> get props => [];
 }
@@ -21,4 +21,3 @@ class BleConnected extends BleState {
   @override
   List<Object?> get props => [device];
 }
-

@@ -1,17 +1,14 @@
-# smart_ble_alarm
+# WakeGuard Smart BLE Alarm
 
-A new Flutter project.
+Flutter companion app for an autonomous HM-10 BLE alarm clock. The app pairs with the clock, syncs time, alarms, timers, and display settings, and prints QR dismissal codes that must be scanned to silence protected alarms.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+Run from the `smart_ble_alarm` directory:
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+flutter pub get
+flutter run
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The real app uses `BleRepositoryImpl`. Tests can inject `SimulatedBleRepositoryImpl` to exercise UI flows without hardware.

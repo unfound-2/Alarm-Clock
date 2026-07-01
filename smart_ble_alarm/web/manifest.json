@@ -1,11 +1,11 @@
 {
-    "name": "smart_ble_alarm",
-    "short_name": "smart_ble_alarm",
+    "name": "WakeGuard Smart BLE Alarm",
+    "short_name": "WakeGuard",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#050508",
+    "theme_color": "#FF5500",
+    "description": "Companion app for a BLE smart alarm clock with QR dismissal.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

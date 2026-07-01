@@ -25,11 +25,13 @@ void main() async {
     bleRepository = BleRepositoryImpl();
   }
 
-  runApp(SmartAlarmApp(
-    prefs: prefs,
-    rememberedDeviceId: rememberedDeviceId,
-    bleRepository: bleRepository,
-  ));
+  runApp(
+    SmartAlarmApp(
+      prefs: prefs,
+      rememberedDeviceId: rememberedDeviceId,
+      bleRepository: bleRepository,
+    ),
+  );
 }
 
 class SmartAlarmApp extends StatelessWidget {
@@ -38,7 +40,7 @@ class SmartAlarmApp extends StatelessWidget {
   final BleRepository bleRepository;
 
   const SmartAlarmApp({
-    super.key, 
+    super.key,
     required this.prefs,
     this.rememberedDeviceId,
     required this.bleRepository,
@@ -53,7 +55,8 @@ class SmartAlarmApp extends StatelessWidget {
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (context) => SettingsBloc(prefs: prefs)..add(LoadSettingsEvent()),
+            create: (context) =>
+                SettingsBloc(prefs: prefs)..add(LoadSettingsEvent()),
           ),
           BlocProvider(
             create: (context) {
@@ -67,10 +70,9 @@ class SmartAlarmApp extends StatelessWidget {
             },
           ),
           BlocProvider<AlarmBloc>(
-            create: (_) => AlarmBloc(
-              bleRepository: bleRepository,
-              prefs: prefs,
-            )..add(LoadAlarmsEvent()),
+            create: (_) =>
+                AlarmBloc(bleRepository: bleRepository, prefs: prefs)
+                  ..add(LoadAlarmsEvent()),
           ),
         ],
         child: BlocBuilder<SettingsBloc, SettingsState>(
@@ -85,12 +87,15 @@ class SmartAlarmApp extends StatelessWidget {
             }
 
             bool isDark = settingsState.themeString != 'Light';
-            
+
             return MaterialApp(
               title: 'Smart BLE Alarm',
-              theme: AppTheme.getTheme(accentColor: accentColor, isDarkMode: isDark),
-              home: prefs.getString('rememberedDeviceId') == null 
-                  ? SetupScreen(prefs: prefs) 
+              theme: AppTheme.getTheme(
+                accentColor: accentColor,
+                isDarkMode: isDark,
+              ),
+              home: prefs.getString('rememberedDeviceId') == null
+                  ? SetupScreen(prefs: prefs)
                   : const MainScreen(),
               debugShowCheckedModeBanner: false,
             );

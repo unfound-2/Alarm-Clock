@@ -3,12 +3,25 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
-  static ThemeData getTheme({Color accentColor = AppColors.primaryOrange, bool isDarkMode = true}) {
-    final bgColor = isDarkMode ? AppColors.background : AppColors.lightBackground;
-    final surfaceColor = isDarkMode ? AppColors.surface : AppColors.lightSurface;
-    final textPrimary = isDarkMode ? AppColors.textPrimary : AppColors.textPrimaryLight;
-    final textSecondary = isDarkMode ? AppColors.textSecondary : AppColors.textSecondaryLight;
-    final highlightColor = isDarkMode ? AppColors.surfaceHighlight : AppColors.lightSurfaceHighlight;
+  static ThemeData getTheme({
+    Color accentColor = AppColors.primaryOrange,
+    bool isDarkMode = true,
+  }) {
+    final bgColor = isDarkMode
+        ? AppColors.background
+        : AppColors.lightBackground;
+    final surfaceColor = isDarkMode
+        ? AppColors.surface
+        : AppColors.lightSurface;
+    final textPrimary = isDarkMode
+        ? AppColors.textPrimary
+        : AppColors.textPrimaryLight;
+    final textSecondary = isDarkMode
+        ? AppColors.textSecondary
+        : AppColors.textSecondaryLight;
+    final highlightColor = isDarkMode
+        ? AppColors.surfaceHighlight
+        : AppColors.lightSurfaceHighlight;
 
     return ThemeData(
       useMaterial3: true,
@@ -27,8 +40,14 @@ class AppTheme {
       scaffoldBackgroundColor: bgColor,
       textTheme: GoogleFonts.interTextTheme(
         (isDarkMode ? ThemeData.dark() : ThemeData.light()).textTheme.copyWith(
-          displayLarge: TextStyle(color: textPrimary, fontWeight: FontWeight.bold),
-          displayMedium: TextStyle(color: textPrimary, fontWeight: FontWeight.bold),
+          displayLarge: TextStyle(
+            color: textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+          displayMedium: TextStyle(
+            color: textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
           bodyLarge: TextStyle(color: textPrimary),
           bodyMedium: TextStyle(color: textSecondary),
         ),
@@ -48,9 +67,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: surfaceColor.withValues(alpha: 0.8), // Frosted glass effect base
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {

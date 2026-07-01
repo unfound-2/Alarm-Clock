@@ -13,28 +13,28 @@ class SecureKeyDatasource {
     if (base64Key != null) {
       return base64Decode(base64Key);
     }
-    
+
     // Generate new 128-bit (16 byte) random key
     final random = Random.secure();
     final keyBytes = List<int>.generate(16, (_) => random.nextInt(256));
     await _storage.write(key: keyName, value: base64Encode(keyBytes));
     return keyBytes;
   }
-  
+
   /// Generates the static 8-byte token for a given alarm
   Future<List<int>> getDailyToken(int alarmId) async {
     final key = await _getOrGenerateKey(alarmId);
-    
+
     // Payload = AlarmID (static so printed QR code is permanently valid)
     List<int> payload = [alarmId];
-    
+
     var hmac = Hmac(sha256, key);
     var digest = hmac.convert(payload);
-    
+
     // Return first 8 bytes of the hash as the token
     return digest.bytes.sublist(0, 8);
   }
-  
+
   /// Generates the QR code string for the alarm
   Future<String> getQRCodeData(int alarmId) async {
     final token = await getDailyToken(alarmId);
@@ -44,7 +44,24 @@ class SecureKeyDatasource {
   /// Verifies scanned QR code string
   Future<bool> verifyQRCode(int alarmId, String scannedData) async {
     final expectedToken = await getDailyToken(alarmId);
-    final expectedBase64 = base64Encode(expectedToken);
-    return scannedData == expectedBase64;
+    try {
+      final scannedToken = base64Decode(scannedData.trim());
+      return _constantTimeEquals(scannedToken, expectedToken);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _constantTimeEquals(List<int> a, List<int> b) {
+    var diff = a.length ^ b.length;
+    final maxLength = a.length > b.length ? a.length : b.length;
+
+    for (var i = 0; i < maxLength; i++) {
+      final aByte = i < a.length ? a[i] : 0;
+      final bByte = i < b.length ? b[i] : 0;
+      diff |= aByte ^ bByte;
+    }
+
+    return diff == 0;
   }
 }
