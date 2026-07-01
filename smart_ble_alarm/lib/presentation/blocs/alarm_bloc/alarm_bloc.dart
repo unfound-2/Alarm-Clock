@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/ble/ble_payloads.dart';
+import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
 import '../../../domain/repositories/ble_repository.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -31,6 +34,14 @@ class DeleteAlarmEvent extends AlarmEvent {
   List<Object?> get props => [alarmId, connectedDevice];
 }
 
+class SyncAlarmsToDeviceEvent extends AlarmEvent {
+  final BluetoothDevice connectedDevice;
+  final Completer<void>? completer;
+  const SyncAlarmsToDeviceEvent(this.connectedDevice, {this.completer});
+  @override
+  List<Object?> get props => [connectedDevice];
+}
+
 class SetRingingAlarmEvent extends AlarmEvent {
   final int? alarmId;
   const SetRingingAlarmEvent(this.alarmId);
@@ -41,72 +52,124 @@ class SetRingingAlarmEvent extends AlarmEvent {
 // --- State ---
 class AlarmState extends Equatable {
   final List<Alarm> alarms;
+  final Set<int> pendingDeleteIds;
   final int driftPpm;
   final bool isLoading;
   final int? ringingAlarmId;
+  final String? syncError;
 
   const AlarmState({
     this.alarms = const [],
+    this.pendingDeleteIds = const {},
     this.driftPpm = 0,
     this.isLoading = false,
     this.ringingAlarmId,
+    this.syncError,
   });
 
   AlarmState copyWith({
     List<Alarm>? alarms,
+    Set<int>? pendingDeleteIds,
     int? driftPpm,
     bool? isLoading,
     int? ringingAlarmId,
+    String? syncError,
     bool clearRingingAlarm = false,
+    bool clearSyncError = false,
   }) {
     return AlarmState(
       alarms: alarms ?? this.alarms,
+      pendingDeleteIds: pendingDeleteIds ?? this.pendingDeleteIds,
       driftPpm: driftPpm ?? this.driftPpm,
       isLoading: isLoading ?? this.isLoading,
-      ringingAlarmId: clearRingingAlarm ? null : (ringingAlarmId ?? this.ringingAlarmId),
+      ringingAlarmId: clearRingingAlarm
+          ? null
+          : (ringingAlarmId ?? this.ringingAlarmId),
+      syncError: clearSyncError ? null : (syncError ?? this.syncError),
     );
   }
 
   @override
-  List<Object?> get props => [alarms, driftPpm, isLoading, ringingAlarmId];
+  List<Object?> get props => [
+    alarms,
+    pendingDeleteIds,
+    driftPpm,
+    isLoading,
+    ringingAlarmId,
+    syncError,
+  ];
 }
 
 // --- Bloc ---
 class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
   final BleRepository bleRepository;
   final SharedPreferences prefs;
+  final SecureKeyDatasource secureKeyDatasource;
 
   static const String _alarmsKey = 'saved_alarms';
+  static const String _pendingDeletesKey = 'pending_alarm_deletes';
 
-  AlarmBloc({required this.bleRepository, required this.prefs}) : super(const AlarmState()) {
+  AlarmBloc({
+    required this.bleRepository,
+    required this.prefs,
+    SecureKeyDatasource? secureKeyDatasource,
+  }) : secureKeyDatasource = secureKeyDatasource ?? SecureKeyDatasource(),
+       super(const AlarmState()) {
     on<LoadAlarmsEvent>(_onLoadAlarms);
     on<AddOrUpdateAlarmEvent>(_onAddOrUpdateAlarm);
     on<DeleteAlarmEvent>(_onDeleteAlarm);
+    on<SyncAlarmsToDeviceEvent>(_onSyncAlarmsToDevice);
     on<SetRingingAlarmEvent>(_onSetRingingAlarm);
   }
 
   void _onLoadAlarms(LoadAlarmsEvent event, Emitter<AlarmState> emit) {
     emit(state.copyWith(isLoading: true));
+    var loadedAlarms = const <Alarm>[];
+    var pendingDeleteIds = const <int>{};
+
     try {
       final alarmsJson = prefs.getString(_alarmsKey);
       if (alarmsJson != null) {
         final List<dynamic> decoded = jsonDecode(alarmsJson);
-        final alarms = decoded.map((e) => Alarm.fromJson(e as Map<String, dynamic>)).toList();
-        emit(state.copyWith(alarms: alarms, isLoading: false));
-        return;
+        loadedAlarms = decoded
+            .map((e) => Alarm.fromJson(e as Map<String, dynamic>))
+            .toList();
       }
     } catch (_) {}
-    emit(state.copyWith(isLoading: false));
+
+    try {
+      final pendingDeletesJson = prefs.getString(_pendingDeletesKey);
+      if (pendingDeletesJson != null) {
+        final List<dynamic> decoded = jsonDecode(pendingDeletesJson);
+        pendingDeleteIds = decoded.map((id) => id as int).toSet();
+      }
+    } catch (_) {}
+
+    emit(
+      state.copyWith(
+        alarms: loadedAlarms,
+        pendingDeleteIds: pendingDeleteIds,
+        isLoading: false,
+      ),
+    );
   }
 
-  void _onSetRingingAlarm(SetRingingAlarmEvent event, Emitter<AlarmState> emit) {
-    emit(state.copyWith(
-      ringingAlarmId: event.alarmId,
-      clearRingingAlarm: event.alarmId == null,
-    ));
+  void _onSetRingingAlarm(
+    SetRingingAlarmEvent event,
+    Emitter<AlarmState> emit,
+  ) {
+    emit(
+      state.copyWith(
+        ringingAlarmId: event.alarmId,
+        clearRingingAlarm: event.alarmId == null,
+      ),
+    );
   }
 
-  void _onAddOrUpdateAlarm(AddOrUpdateAlarmEvent event, Emitter<AlarmState> emit) async {
+  void _onAddOrUpdateAlarm(
+    AddOrUpdateAlarmEvent event,
+    Emitter<AlarmState> emit,
+  ) async {
     final updatedAlarms = List<Alarm>.from(state.alarms);
     final index = updatedAlarms.indexWhere((a) => a.id == event.alarm.id);
     if (index >= 0) {
@@ -115,43 +178,142 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       updatedAlarms.add(event.alarm);
     }
 
-    emit(state.copyWith(alarms: updatedAlarms));
-    _saveAlarms(updatedAlarms);
+    final pendingDeletes = Set<int>.from(state.pendingDeleteIds)
+      ..remove(event.alarm.id);
 
-    if (event.connectedDevice != null) {
-      // CMD 0x02: ALARM_DB_ADD
-      List<int> payload = [
-        event.alarm.id,
-        event.alarm.hour,
-        event.alarm.minute,
-        event.alarm.dayMask,
-        event.alarm.qrRequired ? 1 : 0
-      ];
-      try {
-        await bleRepository.sendCommand(event.connectedDevice!, 0x02, payload);
-      } catch (e) {
-        // Handle failure to send
-      }
+    emit(
+      state.copyWith(
+        alarms: updatedAlarms,
+        pendingDeleteIds: pendingDeletes,
+        clearSyncError: true,
+      ),
+    );
+    await _saveAlarms(updatedAlarms);
+    await _savePendingDeletes(pendingDeletes);
+
+    if (event.connectedDevice == null) return;
+
+    try {
+      await _sendAlarmToDevice(event.connectedDevice!, event.alarm);
+    } catch (_) {
+      emit(
+        state.copyWith(
+          syncError:
+              'Alarm saved locally, but it could not be synced to the clock.',
+        ),
+      );
     }
   }
 
   void _onDeleteAlarm(DeleteAlarmEvent event, Emitter<AlarmState> emit) async {
-    final updatedAlarms = state.alarms.where((a) => a.id != event.alarmId).toList();
-    emit(state.copyWith(alarms: updatedAlarms));
-    _saveAlarms(updatedAlarms);
+    final updatedAlarms = state.alarms
+        .where((a) => a.id != event.alarmId)
+        .toList();
+    final pendingDeletes = Set<int>.from(state.pendingDeleteIds);
 
-    if (event.connectedDevice != null) {
-      // CMD 0x03: ALARM_DB_DEL
-      try {
-        await bleRepository.sendCommand(event.connectedDevice!, 0x03, [event.alarmId]);
-      } catch (e) {
-        // Handle failure to send
-      }
+    emit(
+      state.copyWith(
+        alarms: updatedAlarms,
+        pendingDeleteIds: pendingDeletes,
+        clearSyncError: true,
+      ),
+    );
+    await _saveAlarms(updatedAlarms);
+
+    if (event.connectedDevice == null) {
+      pendingDeletes.add(event.alarmId);
+      await _savePendingDeletes(pendingDeletes);
+      emit(state.copyWith(pendingDeleteIds: pendingDeletes));
+      return;
+    }
+
+    try {
+      await bleRepository.sendCommand(event.connectedDevice!, 0x03, [
+        event.alarmId & 0xFF,
+      ]);
+      pendingDeletes.remove(event.alarmId);
+      await _savePendingDeletes(pendingDeletes);
+      emit(state.copyWith(pendingDeleteIds: pendingDeletes));
+    } catch (_) {
+      pendingDeletes.add(event.alarmId);
+      await _savePendingDeletes(pendingDeletes);
+      emit(
+        state.copyWith(
+          pendingDeleteIds: pendingDeletes,
+          syncError:
+              'Alarm deleted locally, but the clock will be updated when it reconnects.',
+        ),
+      );
     }
   }
 
-  void _saveAlarms(List<Alarm> alarms) {
+  Future<void> _onSyncAlarmsToDevice(
+    SyncAlarmsToDeviceEvent event,
+    Emitter<AlarmState> emit,
+  ) async {
+    var pendingDeletes = Set<int>.from(state.pendingDeleteIds);
+    emit(state.copyWith(clearSyncError: true));
+
+    for (final alarmId in state.pendingDeleteIds) {
+      try {
+        await bleRepository.sendCommand(event.connectedDevice, 0x03, [
+          alarmId & 0xFF,
+        ]);
+        pendingDeletes.remove(alarmId);
+      } catch (_) {
+        const message =
+            'Some deleted alarms could not be removed from the clock.';
+        emit(state.copyWith(syncError: message));
+        _completeSync(event.completer, error: Exception(message));
+        return;
+      }
+    }
+
+    await _savePendingDeletes(pendingDeletes);
+    emit(state.copyWith(pendingDeleteIds: pendingDeletes));
+
+    for (final alarm in state.alarms) {
+      try {
+        await _sendAlarmToDevice(event.connectedDevice, alarm);
+      } catch (_) {
+        const message = 'Some alarms could not be synced to the clock.';
+        emit(state.copyWith(syncError: message));
+        _completeSync(event.completer, error: Exception(message));
+        return;
+      }
+    }
+
+    _completeSync(event.completer);
+  }
+
+  Future<void> _sendAlarmToDevice(BluetoothDevice device, Alarm alarm) async {
+    await bleRepository.sendCommand(device, 0x02, BlePayloads.alarm(alarm));
+
+    if (alarm.qrRequired) {
+      final token = await secureKeyDatasource.getDailyToken(alarm.id);
+      await bleRepository.sendCommand(device, 0x07, [
+        alarm.id & 0xFF,
+        ...token,
+      ]);
+    }
+  }
+
+  Future<void> _saveAlarms(List<Alarm> alarms) {
     final encoded = jsonEncode(alarms.map((a) => a.toJson()).toList());
-    prefs.setString(_alarmsKey, encoded);
+    return prefs.setString(_alarmsKey, encoded);
+  }
+
+  Future<void> _savePendingDeletes(Set<int> pendingDeletes) {
+    final ids = pendingDeletes.toList()..sort();
+    return prefs.setString(_pendingDeletesKey, jsonEncode(ids));
+  }
+
+  void _completeSync(Completer<void>? completer, {Object? error}) {
+    if (completer == null || completer.isCompleted) return;
+    if (error != null) {
+      completer.completeError(error);
+    } else {
+      completer.complete();
+    }
   }
 }

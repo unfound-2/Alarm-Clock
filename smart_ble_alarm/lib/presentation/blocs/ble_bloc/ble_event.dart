@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 
 abstract class BleEvent extends Equatable {
   const BleEvent();
-  
+
   @override
   List<Object?> get props => [];
 }
@@ -37,3 +37,4 @@ class ConnectionStateChangedEvent extends BleEvent {
 
 class ToggleSimulationEvent extends BleEvent {}
 
+class ScanTimedOutEvent extends BleEvent {}

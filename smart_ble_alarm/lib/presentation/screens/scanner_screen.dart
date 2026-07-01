@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../data/datasources/secure_key_datasource.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
+import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -29,40 +30,75 @@ class _ScannerScreenState extends State<ScannerScreen> {
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessing || capture.barcodes.isEmpty) return;
     setState(() => _isProcessing = true);
-    
+
     final barcode = capture.barcodes.first;
     if (barcode.rawValue != null) {
-      bool isValid = await _secureKeyDatasource.verifyQRCode(widget.alarmId, barcode.rawValue!);
+      final isValid = await _secureKeyDatasource.verifyQRCode(
+        widget.alarmId,
+        barcode.rawValue!,
+      );
       if (isValid) {
-        // Send ALARM_DISMISS packet
         if (mounted) {
           final bleState = context.read<BleConnectionBloc>().state;
-          if (bleState is BleConnected) {
-            try {
-              final repo = context.read<BleRepository>();
-              final token = await _secureKeyDatasource.getDailyToken(widget.alarmId);
-              final payload = [widget.alarmId, ...token];
-              repo.sendCommand(bleState.device, 0x09, payload);
-            } catch (e) {
-              // Ignore or handle
-            }
+          if (bleState is! BleConnected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'QR is valid, but the clock is not connected.',
+                ),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+            if (mounted) setState(() => _isProcessing = false);
+            return;
           }
-          
+
+          try {
+            final repo = context.read<BleRepository>();
+            final token = await _secureKeyDatasource.getDailyToken(
+              widget.alarmId,
+            );
+            final payload = [widget.alarmId & 0xFF, ...token];
+            await repo.sendCommand(bleState.device, 0x09, payload);
+            if (!mounted) return;
+            context.read<AlarmBloc>().add(const SetRingingAlarmEvent(null));
+          } catch (_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'QR is valid, but dismissal could not be sent to the clock.',
+                ),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+            setState(() => _isProcessing = false);
+            return;
+          }
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Alarm Dismissed!'), backgroundColor: AppColors.success),
+            const SnackBar(
+              content: Text('Alarm Dismissed!'),
+              backgroundColor: AppColors.success,
+            ),
           );
           Navigator.pop(context, true);
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid QR Code'), backgroundColor: AppColors.error),
+            const SnackBar(
+              content: Text('Invalid QR Code'),
+              backgroundColor: AppColors.error,
+            ),
           );
         }
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) setState(() => _isProcessing = false);
       }
+    } else if (mounted) {
+      setState(() => _isProcessing = false);
     }
   }
 
@@ -70,22 +106,24 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scan QR to Dismiss', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Scan QR to Dismiss',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-          ),
+          MobileScanner(controller: _controller, onDetect: _onDetect),
           if (_isProcessing)
             Container(
               color: Colors.black54,
               child: const Center(
-                child: CircularProgressIndicator(color: AppColors.primaryOrange),
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryOrange,
+                ),
               ),
             ),
           // Scanner overlay frame

@@ -3,11 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../../domain/repositories/ble_repository.dart';
-import '../../main.dart' as app_main;
+import 'setup_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
@@ -31,9 +32,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: Theme.of(context).brightness == Brightness.dark 
-                ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
-                : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? [
+                    (Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF0F111A)
+                        : const Color(0xFFF3F4F6)),
+                    Colors.black,
+                  ]
+                : [
+                    (Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF0F111A)
+                        : const Color(0xFFF3F4F6)),
+                    Colors.white,
+                  ],
           ),
         ),
         child: SafeArea(
@@ -48,14 +59,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Theme',
                       subtitle: settingsState.themeString,
                       icon: Icons.dark_mode,
-                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280))),
+                      trailing: Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: (Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF8B9BB4)
+                            : const Color(0xFF6B7280)),
+                      ),
                       onTap: () {
                         _showSelectionSheet(
                           context,
                           'Select Theme',
                           ['Light', 'Dark'],
                           settingsState.themeString,
-                          (val) => context.read<SettingsBloc>().add(UpdateThemeEvent(val)),
+                          (val) => context.read<SettingsBloc>().add(
+                            UpdateThemeEvent(val),
+                          ),
                         );
                       },
                     ),
@@ -63,14 +82,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Accent Color',
                       subtitle: settingsState.accentColorString,
                       icon: Icons.color_lens,
-                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280))),
+                      trailing: Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: (Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF8B9BB4)
+                            : const Color(0xFF6B7280)),
+                      ),
                       onTap: () {
                         _showSelectionSheet(
                           context,
                           'Select Accent Color',
-                          ['Neon Orange', 'Cyber Cyan', 'Matrix Green', 'Neon Blue'],
+                          [
+                            'Neon Orange',
+                            'Cyber Cyan',
+                            'Matrix Green',
+                            'Neon Blue',
+                          ],
                           settingsState.accentColorString,
-                          (val) => context.read<SettingsBloc>().add(UpdateAccentColorEvent(val)),
+                          (val) => context.read<SettingsBloc>().add(
+                            UpdateAccentColorEvent(val),
+                          ),
                         );
                       },
                     ),
@@ -78,8 +110,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Animations',
                       subtitle: 'Enable UI transitions and effects',
                       value: settingsState.animationsEnabled,
-                      onChanged: (val) => context.read<SettingsBloc>().add(ToggleAnimationsEvent(val)),
+                      onChanged: (val) => context.read<SettingsBloc>().add(
+                        ToggleAnimationsEvent(val),
+                      ),
                       icon: Icons.animation,
+                    ),
+                  ]),
+
+                  _buildSectionHeader('TIME'),
+                  _buildCard([
+                    _buildSwitchTile(
+                      title: '24-Hour Time',
+                      subtitle: 'Use 24-hour format instead of AM/PM',
+                      value: settingsState.is24HourTime,
+                      onChanged: (val) => context.read<SettingsBloc>().add(
+                        Toggle24HourTimeEvent(val),
+                      ),
+                      icon: Icons.access_time,
+                    ),
+                  ]),
+
+                  _buildSectionHeader('ALARM PREFERENCES'),
+                  _buildCard([
+                    _buildSwitchTile(
+                      title: 'Default Require QR Scan',
+                      subtitle: 'New alarms require QR scan by default',
+                      value: settingsState.defaultQrRequired,
+                      onChanged: (val) => context.read<SettingsBloc>().add(
+                        ToggleDefaultQrRequiredEvent(val),
+                      ),
+                      icon: Icons.qr_code,
+                    ),
+                  ]),
+
+                  _buildSectionHeader('NOTIFICATIONS & PERMISSIONS'),
+                  _buildCard([
+                    _buildPermissionTile(
+                      title: 'Notification Permission',
+                      icon: Icons.notifications,
+                      permission: Permission.notification,
+                    ),
+                    _buildPermissionTile(
+                      title: 'Bluetooth Scan Permission',
+                      icon: Icons.bluetooth_searching,
+                      permission: Permission.bluetoothScan,
+                    ),
+                    _buildPermissionTile(
+                      title: 'Bluetooth Connect Permission',
+                      icon: Icons.bluetooth_connected,
+                      permission: Permission.bluetoothConnect,
+                    ),
+                    _buildPermissionTile(
+                      title: 'Location Permission',
+                      icon: Icons.location_on,
+                      permission: Permission.locationWhenInUse,
+                    ),
+                    _buildListTile(
+                      title: 'Open System Settings',
+                      icon: Icons.settings_applications,
+                      onTap: () => openAppSettings(),
                     ),
                   ]),
 
@@ -94,7 +183,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         applicationVersion: '1.0.0 (Build 42)',
                       ),
                     ),
-                    _buildListTile(title: 'App Version', subtitle: '1.0.0 (Build 42)', icon: Icons.verified),
+                    _buildListTile(
+                      title: 'App Version',
+                      subtitle: '1.0.0 (Build 42)',
+                      icon: Icons.verified,
+                    ),
                     _buildListTile(
                       title: 'Open Source Licenses',
                       icon: Icons.description_outlined,
@@ -116,19 +209,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         context,
                         'Factory Reset Clock',
                         'This will erase all alarms and settings on the physical clock hardware. This cannot be undone.',
-                        () {
-                          final bleState = context.read<BleConnectionBloc>().state;
+                        () async {
+                          final bleState = context
+                              .read<BleConnectionBloc>()
+                              .state;
                           if (bleState is BleConnected) {
                             final repo = context.read<BleRepository>();
-                            // Delete all 10 alarms
-                            for (int i = 0; i < 10; i++) {
-                              try { repo.sendCommand(bleState.device, 0x03, [i]); } catch (_) {}
+                            final alarmBloc = context.read<AlarmBloc>();
+                            final localAlarmIds = alarmBloc.state.alarms
+                                .map((alarm) => alarm.id)
+                                .toSet();
+                            final idsToDelete = {
+                              ...localAlarmIds,
+                              1,
+                              2,
+                              3,
+                              4,
+                              5,
+                            };
+                            for (final id in idsToDelete) {
+                              try {
+                                await repo.sendCommand(bleState.device, 0x03, [
+                                  id & 0xFF,
+                                ]);
+                              } catch (_) {}
                             }
                             // Reset config to defaults
-                            try { repo.sendCommand(bleState.device, 0x06, [1, 22, 0, 6, 0]); } catch (_) {}
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factory reset commands sent to clock.')));
+                            try {
+                              await repo.sendCommand(bleState.device, 0x06, [
+                                1,
+                                22,
+                                0,
+                                6,
+                                0,
+                              ]);
+                            } catch (_) {}
+                            for (final id in localAlarmIds) {
+                              alarmBloc.add(
+                                DeleteAlarmEvent(id, bleState.device),
+                              );
+                            }
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Factory reset commands sent to clock.',
+                                ),
+                              ),
+                            );
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Must be connected to physical clock to factory reset.')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Must be connected to physical clock to factory reset.',
+                                ),
+                              ),
+                            );
                           }
                         },
                       ),
@@ -145,44 +281,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           final prefs = await SharedPreferences.getInstance();
                           await prefs.clear();
                           if (!context.mounted) return;
-                          app_main.main();
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => SetupScreen(prefs: prefs),
+                            ),
+                            (_) => false,
+                          );
                         },
                       ),
-                    ),
-                  ]),
-
-                  _buildSectionHeader('ALARM PREFERENCES'),
-                  _buildCard([
-                    _buildSwitchTile(
-                      title: 'Default Require QR Scan',
-                      subtitle: 'New alarms require QR scan by default',
-                      value: settingsState.defaultQrRequired,
-                      onChanged: (val) => context.read<SettingsBloc>().add(ToggleDefaultQrRequiredEvent(val)),
-                      icon: Icons.qr_code,
-                    ),
-                  ]),
-
-                  _buildSectionHeader('NOTIFICATIONS & PERMISSIONS'),
-                  _buildCard([
-                    _buildPermissionTile(
-                      title: 'Notification Permission',
-                      icon: Icons.notifications,
-                      permission: Permission.notification,
-                    ),
-                    _buildPermissionTile(
-                      title: 'Bluetooth Permission',
-                      icon: Icons.bluetooth_connected,
-                      permission: Permission.bluetoothConnect,
-                    ),
-                    _buildPermissionTile(
-                      title: 'Location Permission',
-                      icon: Icons.location_on,
-                      permission: Permission.location,
-                    ),
-                    _buildListTile(
-                      title: 'Open System Settings',
-                      icon: Icons.settings_applications,
-                      onTap: () => openAppSettings(),
                     ),
                   ]),
 
@@ -219,17 +325,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         side: BorderSide(color: Theme.of(context).dividerColor, width: 1.5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: children,
-      ),
+      child: Column(children: children),
     );
   }
 
-  void _showSelectionSheet(BuildContext context, String title, List<String> options, String currentValue, Function(String) onSelect) {
+  void _showSelectionSheet(
+    BuildContext context,
+    String title,
+    List<String> options,
+    String currentValue,
+    Function(String) onSelect,
+  ) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Column(
@@ -237,16 +349,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
               ),
-              ...options.map((option) => ListTile(
-                    title: Text(option, style: TextStyle(color: currentValue == option ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface)),
-                    trailing: currentValue == option ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
-                    onTap: () {
-                      onSelect(option);
-                      Navigator.pop(context);
-                    },
-                  )),
+              ...options.map(
+                (option) => ListTile(
+                  title: Text(
+                    option,
+                    style: TextStyle(
+                      color: currentValue == option
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  trailing: currentValue == option
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    onSelect(option);
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -254,25 +387,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showConfirmationDialog(BuildContext context, String title, String content, VoidCallback onConfirm) {
+  void _showConfirmationDialog(
+    BuildContext context,
+    String title,
+    String content,
+    VoidCallback onConfirm,
+  ) {
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: Theme.of(context).colorScheme.surface,
-          title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-          content: Text(content, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
+          title: Text(
+            title,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          content: Text(
+            content,
+            style: TextStyle(
+              color: (Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFF8B9BB4)
+                  : const Color(0xFF6B7280)),
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('CANCEL', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
+              child: Text(
+                'CANCEL',
+                style: TextStyle(
+                  color: (Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF8B9BB4)
+                      : const Color(0xFF6B7280)),
+                ),
+              ),
             ),
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
                 onConfirm();
               },
-              child: Text('CONFIRM', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              child: Text(
+                'CONFIRM',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ),
           ],
         );
@@ -290,9 +448,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Icon(icon, color: titleColor ?? Theme.of(context).colorScheme.primary),
-      title: Text(title, style: TextStyle(color: titleColor ?? Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
-      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)) : null,
+      leading: Icon(
+        icon,
+        color: titleColor ?? Theme.of(context).colorScheme.primary,
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: titleColor ?? Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                color: (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF8B9BB4)
+                    : const Color(0xFF6B7280)),
+                fontSize: 12,
+              ),
+            )
+          : null,
       trailing: trailing,
       onTap: onTap,
     );
@@ -307,8 +484,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return SwitchListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          color: (Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF8B9BB4)
+              : const Color(0xFF6B7280)),
+          fontSize: 12,
+        ),
+      ),
       secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
       value: value,
       activeThumbColor: Theme.of(context).colorScheme.primary,
@@ -332,20 +523,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           trailing: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: isGranted ? AppColors.success.withValues(alpha: 0.2) : Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
+              color: isGranted
+                  ? AppColors.success.withValues(alpha: 0.2)
+                  : Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isGranted ? AppColors.success : Theme.of(context).colorScheme.error),
+              border: Border.all(
+                color: isGranted
+                    ? AppColors.success
+                    : Theme.of(context).colorScheme.error,
+              ),
             ),
-            child: Text(isGranted ? 'OK' : 'FIX', style: TextStyle(color: isGranted ? AppColors.success : Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text(
+              isGranted ? 'OK' : 'FIX',
+              style: TextStyle(
+                color: isGranted
+                    ? AppColors.success
+                    : Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
           ),
           onTap: () async {
             if (!isGranted) {
               await permission.request();
-              setState(() {}); // Trigger rebuild to update permission status visually
+              setState(
+                () {},
+              ); // Trigger rebuild to update permission status visually
             }
           },
         );
-      }
+      },
     );
   }
 }

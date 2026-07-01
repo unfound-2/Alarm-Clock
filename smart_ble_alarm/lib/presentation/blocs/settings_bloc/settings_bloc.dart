@@ -52,9 +52,21 @@ class UpdateClockConfigEvent extends SettingsEvent {
   final int sleepStartMinute;
   final int sleepEndHour;
   final int sleepEndMinute;
-  const UpdateClockConfigEvent(this.autoDim, this.sleepStartHour, this.sleepStartMinute, this.sleepEndHour, this.sleepEndMinute);
+  const UpdateClockConfigEvent(
+    this.autoDim,
+    this.sleepStartHour,
+    this.sleepStartMinute,
+    this.sleepEndHour,
+    this.sleepEndMinute,
+  );
   @override
-  List<Object?> get props => [autoDim, sleepStartHour, sleepStartMinute, sleepEndHour, sleepEndMinute];
+  List<Object?> get props => [
+    autoDim,
+    sleepStartHour,
+    sleepStartMinute,
+    sleepEndHour,
+    sleepEndMinute,
+  ];
 }
 
 // --- State ---
@@ -64,7 +76,7 @@ class SettingsState extends Equatable {
   final String themeString;
   final String accentColorString;
   final bool animationsEnabled;
-  
+
   // Clock specific settings
   final bool autoDim;
   final int sleepStartHour;
@@ -113,17 +125,17 @@ class SettingsState extends Equatable {
 
   @override
   List<Object?> get props => [
-        is24HourTime,
-        defaultQrRequired,
-        themeString,
-        accentColorString,
-        animationsEnabled,
-        autoDim,
-        sleepStartHour,
-        sleepStartMinute,
-        sleepEndHour,
-        sleepEndMinute,
-      ];
+    is24HourTime,
+    defaultQrRequired,
+    themeString,
+    accentColorString,
+    animationsEnabled,
+    autoDim,
+    sleepStartHour,
+    sleepStartMinute,
+    sleepEndHour,
+    sleepEndMinute,
+  ];
 }
 
 // --- Bloc ---
@@ -141,58 +153,81 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
   }
 
   void _onLoadSettings(LoadSettingsEvent event, Emitter<SettingsState> emit) {
-    emit(state.copyWith(
-      is24HourTime: prefs.getBool('is24HourTime') ?? false,
-      defaultQrRequired: prefs.getBool('defaultQrRequired') ?? true,
-      themeString: prefs.getString('themeString') ?? 'Dark',
-      accentColorString: prefs.getString('accentColorString') ?? 'Neon Orange',
-      animationsEnabled: prefs.getBool('animationsEnabled') ?? true,
-      autoDim: prefs.getBool('autoDim') ?? true,
-      sleepStartHour: prefs.getInt('sleepStartHour') ?? 22,
-      sleepStartMinute: prefs.getInt('sleepStartMinute') ?? 0,
-      sleepEndHour: prefs.getInt('sleepEndHour') ?? 6,
-      sleepEndMinute: prefs.getInt('sleepEndMinute') ?? 0,
-    ));
+    emit(
+      state.copyWith(
+        is24HourTime: prefs.getBool('is24HourTime') ?? false,
+        defaultQrRequired: prefs.getBool('defaultQrRequired') ?? true,
+        themeString: prefs.getString('themeString') ?? 'Dark',
+        accentColorString:
+            prefs.getString('accentColorString') ?? 'Neon Orange',
+        animationsEnabled: prefs.getBool('animationsEnabled') ?? true,
+        autoDim: prefs.getBool('autoDim') ?? true,
+        sleepStartHour: prefs.getInt('sleepStartHour') ?? 22,
+        sleepStartMinute: prefs.getInt('sleepStartMinute') ?? 0,
+        sleepEndHour: prefs.getInt('sleepEndHour') ?? 6,
+        sleepEndMinute: prefs.getInt('sleepEndMinute') ?? 0,
+      ),
+    );
   }
 
-  void _onToggle24HourTime(Toggle24HourTimeEvent event, Emitter<SettingsState> emit) async {
+  void _onToggle24HourTime(
+    Toggle24HourTimeEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setBool('is24HourTime', event.is24Hour);
     emit(state.copyWith(is24HourTime: event.is24Hour));
   }
 
-  void _onToggleDefaultQrRequired(ToggleDefaultQrRequiredEvent event, Emitter<SettingsState> emit) async {
+  void _onToggleDefaultQrRequired(
+    ToggleDefaultQrRequiredEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setBool('defaultQrRequired', event.required);
     emit(state.copyWith(defaultQrRequired: event.required));
   }
 
-  void _onUpdateTheme(UpdateThemeEvent event, Emitter<SettingsState> emit) async {
+  void _onUpdateTheme(
+    UpdateThemeEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setString('themeString', event.theme);
     emit(state.copyWith(themeString: event.theme));
   }
 
-  void _onUpdateAccentColor(UpdateAccentColorEvent event, Emitter<SettingsState> emit) async {
+  void _onUpdateAccentColor(
+    UpdateAccentColorEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setString('accentColorString', event.accentColor);
     emit(state.copyWith(accentColorString: event.accentColor));
   }
 
-  void _onToggleAnimations(ToggleAnimationsEvent event, Emitter<SettingsState> emit) async {
+  void _onToggleAnimations(
+    ToggleAnimationsEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setBool('animationsEnabled', event.enabled);
     emit(state.copyWith(animationsEnabled: event.enabled));
   }
 
-  void _onUpdateClockConfig(UpdateClockConfigEvent event, Emitter<SettingsState> emit) async {
+  void _onUpdateClockConfig(
+    UpdateClockConfigEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
     await prefs.setBool('autoDim', event.autoDim);
     await prefs.setInt('sleepStartHour', event.sleepStartHour);
     await prefs.setInt('sleepStartMinute', event.sleepStartMinute);
     await prefs.setInt('sleepEndHour', event.sleepEndHour);
     await prefs.setInt('sleepEndMinute', event.sleepEndMinute);
-    
-    emit(state.copyWith(
-      autoDim: event.autoDim,
-      sleepStartHour: event.sleepStartHour,
-      sleepStartMinute: event.sleepStartMinute,
-      sleepEndHour: event.sleepEndHour,
-      sleepEndMinute: event.sleepEndMinute,
-    ));
+
+    emit(
+      state.copyWith(
+        autoDim: event.autoDim,
+        sleepStartHour: event.sleepStartHour,
+        sleepStartMinute: event.sleepStartMinute,
+        sleepEndHour: event.sleepEndHour,
+        sleepEndMinute: event.sleepEndMinute,
+      ),
+    );
   }
 }

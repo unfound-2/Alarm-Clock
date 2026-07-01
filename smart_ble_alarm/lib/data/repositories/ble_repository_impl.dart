@@ -9,11 +9,13 @@ class BleRepositoryImpl implements BleRepository {
 
   BluetoothCharacteristic? _txRxCharacteristic;
   StreamSubscription? _characteristicSub;
-  final StreamController<List<int>> _framesController = StreamController.broadcast();
+  final StreamController<List<int>> _framesController =
+      StreamController.broadcast();
   final List<int> _receiveBuffer = [];
 
   @override
-  Stream<BluetoothAdapterState> get adapterState => FlutterBluePlus.adapterState;
+  Stream<BluetoothAdapterState> get adapterState =>
+      FlutterBluePlus.adapterState;
 
   @override
   Stream<List<ScanResult>> get scanResults => FlutterBluePlus.scanResults;
@@ -33,16 +35,28 @@ class BleRepositoryImpl implements BleRepository {
 
   @override
   Future<void> connectToDevice(BluetoothDevice device) async {
-    await device.connect(license: License.nonprofit, autoConnect: true);
-    await device.discoverServices();
-    
+    await _characteristicSub?.cancel();
+    _characteristicSub = null;
+    _txRxCharacteristic = null;
+    _receiveBuffer.clear();
+
+    await device.connect(
+      license: License.nonprofit,
+      autoConnect: false,
+      timeout: const Duration(seconds: 15),
+    );
+    final services = await device.discoverServices();
+
     // Find HM-10 characteristic
-    for (BluetoothService service in device.servicesList) {
+    for (BluetoothService service in services) {
       if (service.uuid.toString().toUpperCase().contains(hm10ServiceUuid)) {
-        for (BluetoothCharacteristic characteristic in service.characteristics) {
-          if (characteristic.uuid.toString().toUpperCase().contains(hm10CharacteristicUuid)) {
+        for (BluetoothCharacteristic characteristic
+            in service.characteristics) {
+          if (characteristic.uuid.toString().toUpperCase().contains(
+            hm10CharacteristicUuid,
+          )) {
             _txRxCharacteristic = characteristic;
-            
+
             // Subscribe to notifications
             await characteristic.setNotifyValue(true);
             _characteristicSub = characteristic.lastValueStream.listen((value) {
@@ -55,23 +69,19 @@ class BleRepositoryImpl implements BleRepository {
         }
       }
     }
-  }
 
-  void _processIncomingBytes(List<int> data) {
-    for (int byte in data) {
-      if (byte == BleFraming.sof) {
-        _receiveBuffer.clear();
-      } else if (byte == BleFraming.eof) {
-        _processFrame(List.from(_receiveBuffer));
-        _receiveBuffer.clear();
-      } else {
-        _receiveBuffer.add(byte);
-      }
+    if (_txRxCharacteristic == null) {
+      await device.disconnect();
+      throw Exception("HM-10 UART characteristic FFE1 was not found.");
     }
   }
 
-  void _processFrame(List<int> frame) {
-    _framesController.add(frame);
+  void _processIncomingBytes(List<int> data) {
+    _receiveBuffer.addAll(data);
+    final frames = BleFraming.decodeFrames(_receiveBuffer);
+    for (final frame in frames) {
+      _framesController.add(frame);
+    }
   }
 
   @override
@@ -89,12 +99,16 @@ class BleRepositoryImpl implements BleRepository {
   }
 
   @override
-  Future<void> sendCommand(BluetoothDevice device, int cmd, List<int> payload) async {
+  Future<void> sendCommand(
+    BluetoothDevice device,
+    int cmd,
+    List<int> payload,
+  ) async {
     if (_txRxCharacteristic == null) {
       throw Exception("Characteristic not found. Are you connected?");
     }
     List<int> frame = BleFraming.encodeFrame(cmd, payload);
-    
+
     // Send in chunks of 20 bytes (MTU limit)
     for (int i = 0; i < frame.length; i += 20) {
       int end = (i + 20 < frame.length) ? i + 20 : frame.length;

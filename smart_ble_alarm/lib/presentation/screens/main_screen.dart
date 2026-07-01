@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:ui' as dart_ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../core/ble/ble_payloads.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
@@ -20,6 +22,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  StreamSubscription<List<int>>? _frameSubscription;
 
   final List<Widget> _tabs = [
     const HomeTab(),
@@ -29,66 +32,142 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   @override
+  void dispose() {
+    _frameSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _syncConnectedClock(
+    BuildContext context,
+    BleConnected state,
+  ) async {
+    final bleRepo = context.read<BleRepository>();
+    final alarmBloc = context.read<AlarmBloc>();
+    final device = state.device;
+    final settings = context.read<SettingsBloc>().state;
+
+    try {
+      await bleRepo.sendCommand(device, 0x04, const []);
+      await bleRepo.sendCommand(
+        device,
+        0x01,
+        BlePayloads.currentEpochSeconds(),
+      );
+      final alarmSync = Completer<void>();
+      alarmBloc.add(SyncAlarmsToDeviceEvent(device, completer: alarmSync));
+      await alarmSync.future;
+      await bleRepo.sendCommand(
+        device,
+        0x06,
+        BlePayloads.clockSettings(
+          autoDim: settings.autoDim,
+          sleepStartHour: settings.sleepStartHour,
+          sleepStartMinute: settings.sleepStartMinute,
+          sleepEndHour: settings.sleepEndHour,
+          sleepEndMinute: settings.sleepEndMinute,
+        ),
+      );
+      await bleRepo.sendCommand(device, 0x05, const []);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Clock sync failed. Local changes are still saved.',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  void _listenForDeviceFrames(BuildContext context, BleConnected state) {
+    final bleRepo = context.read<BleRepository>();
+    final alarmBloc = context.read<AlarmBloc>();
+    final device = state.device;
+
+    _frameSubscription?.cancel();
+    _frameSubscription = bleRepo.receiveFrames(device).listen((frame) async {
+      if (!mounted || frame.length < 2) return;
+
+      final command = frame[0];
+      final len = frame[1];
+      final data = frame.skip(2).take(len).toList();
+
+      if (command == 0x08 && data.isNotEmpty) {
+        final alarmId = data.first;
+        alarmBloc.add(SetRingingAlarmEvent(alarmId));
+        try {
+          await bleRepo.sendCommand(device, 0x88, [alarmId]);
+        } catch (_) {}
+      } else if (command == 0x89) {
+        alarmBloc.add(const SetRingingAlarmEvent(null));
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiBlocListener(
       listeners: [
         BlocListener<BleConnectionBloc, BleState>(
           listener: (context, state) {
             if (state is BleConnected) {
-              final bleRepo = context.read<BleRepository>();
-              final device = state.device;
-              
-              // 1. Time Sync (4-byte Unix Epoch)
-              final now = DateTime.now();
-              final epoch = now.millisecondsSinceEpoch ~/ 1000;
-              final timeBytes = [
-                (epoch >> 24) & 0xFF,
-                (epoch >> 16) & 0xFF,
-                (epoch >> 8) & 0xFF,
-                epoch & 0xFF,
-              ];
-              try { bleRepo.sendCommand(device, 0x01, timeBytes); } catch (_) {}
-              
-              // 2. Alarm Sync
-              final alarmBloc = context.read<AlarmBloc>();
-              for (var alarm in alarmBloc.state.alarms) {
-                alarmBloc.add(AddOrUpdateAlarmEvent(alarm, device));
-              }
-              
-              // 3. Config Sync
-              final settings = context.read<SettingsBloc>().state;
-              try { 
-                bleRepo.sendCommand(device, 0x06, [
-                  settings.autoDim ? 1 : 0,
-                  settings.sleepStartHour,
-                  settings.sleepStartMinute,
-                  settings.sleepEndHour,
-                  settings.sleepEndMinute,
-                ]); 
-              } catch (_) {}
+              _listenForDeviceFrames(context, state);
+              _syncConnectedClock(context, state);
+            } else if (state is BleDisconnected) {
+              _frameSubscription?.cancel();
+              _frameSubscription = null;
             }
           },
         ),
+        BlocListener<AlarmBloc, AlarmState>(
+          listenWhen: (previous, current) =>
+              previous.syncError != current.syncError &&
+              current.syncError != null,
+          listener: (context, state) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.syncError!),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          },
+        ),
         BlocListener<SettingsBloc, SettingsState>(
-          listenWhen: (previous, current) => 
+          listenWhen: (previous, current) =>
               previous.autoDim != current.autoDim ||
               previous.sleepStartHour != current.sleepStartHour ||
               previous.sleepStartMinute != current.sleepStartMinute ||
               previous.sleepEndHour != current.sleepEndHour ||
               previous.sleepEndMinute != current.sleepEndMinute,
-          listener: (context, state) {
+          listener: (context, state) async {
             final bleState = context.read<BleConnectionBloc>().state;
             if (bleState is BleConnected) {
               final bleRepo = context.read<BleRepository>();
-              try { 
-                bleRepo.sendCommand(bleState.device, 0x06, [
-                  state.autoDim ? 1 : 0,
-                  state.sleepStartHour,
-                  state.sleepStartMinute,
-                  state.sleepEndHour,
-                  state.sleepEndMinute,
-                ]); 
-              } catch (_) {}
+              try {
+                await bleRepo.sendCommand(
+                  bleState.device,
+                  0x06,
+                  BlePayloads.clockSettings(
+                    autoDim: state.autoDim,
+                    sleepStartHour: state.sleepStartHour,
+                    sleepStartMinute: state.sleepStartMinute,
+                    sleepEndHour: state.sleepEndHour,
+                    sleepEndMinute: state.sleepEndMinute,
+                  ),
+                );
+              } catch (_) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Clock settings saved locally, but sync failed.',
+                    ),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                );
+              }
             }
           },
         ),
@@ -96,79 +175,116 @@ class _MainScreenState extends State<MainScreen> {
       child: Scaffold(
         extendBody: true,
         body: Column(
-        children: [
-          BlocBuilder<BleConnectionBloc, BleState>(
-            builder: (context, state) {
-              if (state is BleDisconnected) {
-                return Container(
-                  width: double.infinity,
-                  color: Theme.of(context).colorScheme.error,
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top + 8,
-                    bottom: 8,
-                    left: 16,
-                    right: 16,
-                  ),
-                  child: const Text(
-                    'Device disconnected. Changes will be saved locally and automatically synchronized when the clock reconnects.',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-          Expanded(
-            child: _tabs[_currentIndex],
-          ),
-        ],
-      ),
-      bottomNavigationBar: ClipRRect(
-        child: BackdropFilter(
-          filter: dart_ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.5),
+          children: [
+            BlocBuilder<BleConnectionBloc, BleState>(
+              builder: (context, state) {
+                if (state is BleDisconnected) {
+                  return Container(
+                    width: double.infinity,
+                    color: Theme.of(context).colorScheme.error,
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + 8,
+                      bottom: 8,
+                      left: 16,
+                      right: 16,
+                    ),
+                    child: const Text(
+                      'Device disconnected. Changes will be saved locally and automatically synchronized when the clock reconnects.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
-            child: NavigationBarTheme(
-              data: NavigationBarThemeData(
-                backgroundColor: Colors.transparent,
-            indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-            labelTextStyle: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 12);
-              }
-              return TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12);
-            }),
-            iconTheme: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.selected)) {
-                return IconThemeData(color: Theme.of(context).colorScheme.primary);
-              }
-              return IconThemeData(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)));
-            }),
-          ),
-          child: NavigationBar(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            destinations: const [
-              NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Home'),
-              NavigationDestination(icon: Icon(Icons.access_alarm_outlined), selectedIcon: Icon(Icons.access_alarm), label: 'Alarms'),
-              NavigationDestination(icon: Icon(Icons.watch_outlined), selectedIcon: Icon(Icons.watch), label: 'Clock'),
-              NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
-            ],
+            Expanded(child: _tabs[_currentIndex]),
+          ],
+        ),
+        bottomNavigationBar: ClipRRect(
+          child: BackdropFilter(
+            filter: dart_ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.5),
+              ),
+              child: NavigationBarTheme(
+                data: NavigationBarThemeData(
+                  backgroundColor: Colors.transparent,
+                  indicatorColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.2),
+                  labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      );
+                    }
+                    return TextStyle(
+                      color: (Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF8B9BB4)
+                          : const Color(0xFF6B7280)),
+                      fontSize: 12,
+                    );
+                  }),
+                  iconTheme: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return IconThemeData(
+                        color: Theme.of(context).colorScheme.primary,
+                      );
+                    }
+                    return IconThemeData(
+                      color: (Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF8B9BB4)
+                          : const Color(0xFF6B7280)),
+                    );
+                  }),
+                ),
+                child: NavigationBar(
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.dashboard_outlined),
+                      selectedIcon: Icon(Icons.dashboard),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.access_alarm_outlined),
+                      selectedIcon: Icon(Icons.access_alarm),
+                      label: 'Alarms',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.watch_outlined),
+                      selectedIcon: Icon(Icons.watch),
+                      label: 'Clock',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings),
+                      label: 'Settings',
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  ),
-),
     );
   }
 }

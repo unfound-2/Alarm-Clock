@@ -6,7 +6,7 @@ class Alarm extends Equatable {
   final int minute;
   final int dayMask;
   final bool qrRequired;
-  
+
   const Alarm({
     required this.id,
     required this.hour,
@@ -16,10 +16,26 @@ class Alarm extends Equatable {
   });
 
   bool get isActive => (dayMask & 0x80) != 0;
-  
+
   bool isDayActive(int dayIndex) {
     // dayIndex: 0 = Sun, 1 = Mon, ..., 6 = Sat
     return (dayMask & (1 << dayIndex)) != 0;
+  }
+
+  Alarm copyWith({
+    int? id,
+    int? hour,
+    int? minute,
+    int? dayMask,
+    bool? qrRequired,
+  }) {
+    return Alarm(
+      id: id ?? this.id,
+      hour: hour ?? this.hour,
+      minute: minute ?? this.minute,
+      dayMask: dayMask ?? this.dayMask,
+      qrRequired: qrRequired ?? this.qrRequired,
+    );
   }
 
   @override
