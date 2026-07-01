@@ -1,2 +1,2 @@
-# Alarm-Clock
-Alarm clock that helps people with narcolepsy, coded using Swift UI
+# WakeGaurd
+Alarm clock app that helps people with narcolepsy, coded using Darth
